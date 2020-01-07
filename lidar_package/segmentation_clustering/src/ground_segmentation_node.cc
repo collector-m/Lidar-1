@@ -4,42 +4,99 @@
 #include "ground_segmentation.cc"
 #include "segment.cc"
 #include "bin.cc"
+#include "include/render/render.cpp"
+#include "include/params.h"
+#include "processPointClouds.cpp"
+
+static std::string paramsFilePath = "/home/cedric/PERCEPTION_LIDAR/src/lidar_package/segmentation_clustering/include/params.txt";
+static PipelineParams params;
 
 class SegmentationNode {
   ros::Publisher ground_pub_;
   ros::Publisher obstacle_pub_;
   GroundSegmentationParams params_;
+  pcl::visualization::PCLVisualizer::Ptr viewer;
 
 public:
   SegmentationNode(ros::NodeHandle& nh,
                    const std::string& ground_topic,
                    const std::string& obstacle_topic,
                    const GroundSegmentationParams& params,
-                   const bool& latch = false) : params_(params) {
+                   const pcl::visualization::PCLVisualizer::Ptr &view,
+                   const bool& latch = false) : params_(params), viewer(view) {
     ground_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZ>>(ground_topic, 1, latch);
     obstacle_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZ>>(obstacle_topic, 1, latch);
+
+    //viewer
+    CameraAngle setAngle = XY;
+    initCamera(setAngle, viewer);
+    
   }
 
   void scanCallback(const pcl::PointCloud<pcl::PointXYZ>& cloud) {
+
+      if (!params.fromFile(paramsFilePath))
+      {
+          std::cerr << "Error reading params file" << std::endl;
+          return;
+      }
+
+      std::cout << "Max iterations :  " << params.max_iterations << std::endl;
+    //viewer specific
+
+    auto pointProcessorI = boost::make_shared<ProcessPointClouds<pcl::PointXYZ>>();
+    //Clear viewer
+    viewer->removeAllPointClouds();
+    viewer->removeAllShapes();
+
+    //Algorithm Ground removal 
     GroundSegmentation segmenter(params_);
     std::vector<int> labels;
 
     segmenter.segment(cloud, &labels);
-    pcl::PointCloud<pcl::PointXYZ> ground_cloud, obstacle_cloud;
-    ground_cloud.header = cloud.header;
-    obstacle_cloud.header = cloud.header;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_cloud (new pcl::PointCloud<pcl::PointXYZ>); 
+    pcl::PointCloud<pcl::PointXYZ>::Ptr obstacle_cloud (new pcl::PointCloud<pcl::PointXYZ>); 
+    ground_cloud->header = cloud.header;
+    obstacle_cloud->header = cloud.header;
     for (size_t i = 0; i < cloud.size(); ++i) {
-      if (labels[i] == 1) ground_cloud.push_back(cloud[i]);
-      else obstacle_cloud.push_back(cloud[i]);
+      if (labels[i] == 1) ground_cloud->push_back(cloud[i]);
+      else obstacle_cloud->push_back(cloud[i]);
     }
+
+
+
+      pcl::PointCloud<pcl::PointXYZ>::Ptr filterCloud;
+      filterCloud = pointProcessorI->FilterCloud(obstacle_cloud, params.filter_resolution , Eigen::Vector4f (-10, -6, -3, 1), Eigen::Vector4f (30, 7, 2, 1),Eigen::Vector4f (-2.0, -1.5, -2, 1), Eigen::Vector4f ( 2.7, 1.5, 0, 1));
+    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cloudClusters = pointProcessorI->Clustering(filterCloud,params.cluster_tolerance ,params.cluster_min_size,params.cluster_max_size);
+
+      renderPointCloud(viewer,filterCloud,"obstCloud",Color(1,0,0));
+      renderPointCloud(viewer,ground_cloud,"planeCloud",Color(0,1,0));
+
+    int clusterId = 0;
+    std::vector<Color> colors = {Color(0,0,1),Color(1,0,1),Color(1,1,0)};
+
+    for(pcl::PointCloud<pcl::PointXYZ>::Ptr cluster:cloudClusters)  //loop through clusters
+      {
+          std::cout << "Cluster Size ";
+          pointProcessorI->numPoints(cluster);
+          renderPointCloud(viewer,cluster,"obstCloud"+std::to_string(clusterId),colors[clusterId]);
+          //render BB
+          Box box = pointProcessorI->BoundingBox(cluster);
+          renderBox(viewer,box,clusterId);
+          ++clusterId;
+      }
+
+      viewer->spinOnce ();
     ground_pub_.publish(ground_cloud);
-    obstacle_pub_.publish(obstacle_cloud);
+    obstacle_pub_.publish(filterCloud);
   }
 };
 
 int main(int argc, char** argv) {
+  pcl::visualization::PCLVisualizer::Ptr viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
   ros::init(argc, argv, "ground_segmentation");
-  google::InitGoogleLogging(argv[0]);
+  
+  //google::InitGoogleLogging(argv[0]);
 
   ros::NodeHandle nh("~");
 
@@ -76,7 +133,7 @@ int main(int argc, char** argv) {
   nh.param("latch", latch, false);
 
   // Start node.
-  SegmentationNode node(nh, ground_topic, obstacle_topic, params, latch);
+  SegmentationNode node(nh, ground_topic, obstacle_topic, params, viewer,latch);
   ros::Subscriber cloud_sub;
   cloud_sub = nh.subscribe("/velodyne_points", 1, &SegmentationNode::scanCallback, &node);
   ros::spin();
