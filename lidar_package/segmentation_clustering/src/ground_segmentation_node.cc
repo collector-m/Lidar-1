@@ -66,7 +66,7 @@ public:
 
 
       pcl::PointCloud<pcl::PointXYZ>::Ptr filterCloud;
-      filterCloud = pointProcessorI->FilterCloud(obstacle_cloud, params.filter_resolution , Eigen::Vector4f (-10, -6, -3, 1), Eigen::Vector4f (30, 7, 2, 1),Eigen::Vector4f (-2.0, -1.5, -2, 1), Eigen::Vector4f ( 2.7, 1.5, 0, 1));
+      filterCloud = pointProcessorI->FilterCloud(obstacle_cloud, params.filter_resolution , params.crop_min_point, params.crop_max_point,Eigen::Vector4f (-2.0, -1.5, -2, 1), Eigen::Vector4f ( 2.7, 1.5, 0, 1));
     std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cloudClusters = pointProcessorI->Clustering(filterCloud,params.cluster_tolerance ,params.cluster_min_size,params.cluster_max_size);
 
       renderPointCloud(viewer,filterCloud,"obstCloud",Color(1,0,0));
@@ -82,11 +82,19 @@ public:
           renderPointCloud(viewer,cluster,"obstCloud"+std::to_string(clusterId),colors[clusterId]);
           //render BB
           Box box = pointProcessorI->BoundingBox(cluster);
-          renderBox(viewer,box,clusterId);
+          float width =  box.x_max - box.x_min;          
+          float length = box.y_max - box.y_min;  
+          float height = box.z_max - box.z_min; 
+          std::cout << "Box width :" << width << std::endl;
+          std::cout << "Box height : " << height << std::endl; 
+          std::cout << "Box height : " << length << std::endl; 
+          if(length < params.length && width < params.width && height < params.height && box.z_min < params.z_min) 
+              renderBox(viewer,box,clusterId);
           ++clusterId;
       }
 
-      viewer->spinOnce ();
+
+    viewer->spinOnce ();
     ground_pub_.publish(ground_cloud);
     obstacle_pub_.publish(filterCloud);
   }
