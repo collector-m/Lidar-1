@@ -21,6 +21,11 @@ struct PipelineParams {
   float cluster_tolerance;
   int cluster_min_size;
   int cluster_max_size;
+  float length; 
+  float width; 
+  float height; 
+  float z_min; 
+  float z_max; 
 
   // visualization options
   bool render_input_cloud;
@@ -29,6 +34,8 @@ struct PipelineParams {
   bool render_plane;
   bool render_clusters;
   bool render_boxes;
+  
+  
 
   bool fromFile(const std::string &filePath) {
     std::ifstream file_(filePath);
@@ -68,7 +75,19 @@ struct PipelineParams {
         check1 >> cluster_min_size;
       } else if (paramName == "cluster_max_size:") {
         check1 >> cluster_max_size;
-      } else if (paramName == "render_input_cloud:") {
+      } 
+      else if (paramName == "box_length:") {
+        check1 >> length;
+      } else if (paramName == "box_width:") {
+        check1 >> width;
+      } else if (paramName == "box_height:") {
+        check1 >> height;
+      } else if (paramName == "box_z_min:") {
+        check1 >> z_min;
+      } else if (paramName == "box_z_max:") {
+        check1 >> z_max;
+      } 
+      else if (paramName == "render_input_cloud:") {
         check1 >> render_input_cloud;
       } else if (paramName == "render_filtered_cloud:") {
         check1 >> render_filtered_cloud;
